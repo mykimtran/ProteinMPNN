@@ -241,6 +241,7 @@ def main(args):
     protein_list = []
     total_step = 0
     # Validation epoch
+
     with torch.no_grad():
         test_sum, test_weights = 0.0, 0.0
         for ix, protein in enumerate(dataset_valid):
@@ -249,7 +250,7 @@ def main(args):
             all_probs_list = []
             all_log_probs_list = []
             S_sample_list = []
-            batch_clones = [copy.deepcopy(protein) for i in range(BATCH_COPIES)]
+            batch_clones: list[dict] = [copy.deepcopy(protein) for i in range(BATCH_COPIES)]
             (
                 X,
                 S,
@@ -412,6 +413,10 @@ def main(args):
                 with open(ali_file, "w") as f:
                     for temp in temperatures:
                         for j in range(NUM_BATCHES):
+                            # TODO(Kim): Here is a good place to fudge with the "random" order of decoding.
+                            # The rule is that the index in the chain where the randn_2 is largest (absolute value) among all not-masked positions
+                            # is decoded first etc. (and perhaps after the largest masked one, but I don't know)
+                            # randn_2 = torch.tensor([1,2,3,4,5,6], dytype=torch.float32, device=X.device)
                             randn_2 = torch.randn(chain_M.shape, device=X.device)
                             if tied_positions_dict == None:
                                 sample_dict = model.sample(
@@ -610,6 +615,8 @@ def main(args):
                 total_length = X.shape[1]
                 if print_all:
                     print(f"{num_seqs} sequences of length {total_length} generated in {dt} seconds")
+                #if args.run_my_analysis:
+                #    ... here you can call functions that you write somewhere else.
 
 
 if __name__ == "__main__":
@@ -669,7 +676,7 @@ if __name__ == "__main__":
         "--conditional_probs_only_backbone",
         type=int,
         default=0,
-        help="0 for False, 1 for True; if true output conditional probabilities p(s_i given backbone)",
+        help="0 for False, 1 for True if true, output conditional probabilities p(s_i given backbone)",
     )
     argparser.add_argument(
         "--unconditional_probs_only",

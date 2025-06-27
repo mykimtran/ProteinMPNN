@@ -457,8 +457,16 @@ def tied_featurize(
         tied_beta = np.ones(L_max)
         if tied_positions_dict != None:
             tied_pos_list = tied_positions_dict[b["name"]]
+            # tied_pos_list:
+            # {"protein1_name": 
+            #   [
+            #     {"A": [1], "B": [1], "C": [1]},  # <-- item is such a dict!
+            #     {"D": [2], "E": [2], "F": [2]},
+            #     {"B": [70], "C": [70]}
+            #   ]
+            # }
             if tied_pos_list:
-                set_chains_tied = set(list(itertools.chain(*[list(item) for item in tied_pos_list])))
+                # set_chains_tied = set(list(itertools.chain(*[list(item) for item in tied_pos_list])))
                 for tied_item in tied_pos_list:
                     one_list = []
                     for k, v in tied_item.items():
@@ -603,12 +611,12 @@ class StructureDataset:
         discard_count = {"bad_chars": 0, "too_long": 0, "bad_seq_length": 0}
 
         with open(jsonl_file) as f:
-            self.data = []
+            self.data: list[dict] = []
 
             lines = f.readlines()
             start = time.time()
             for i, line in enumerate(lines):
-                entry = json.loads(line)
+                entry: dict = json.loads(line)
                 seq = entry["seq"]
                 name = entry["name"]
 
@@ -1181,7 +1189,7 @@ class ProteinMPNN(nn.Module):
             self.features = ProteinFeatures(node_features, edge_features, top_k=k_neighbors, augment_eps=augment_eps)
 
         self.W_e = nn.Linear(edge_features, hidden_dim, bias=True)
-        self.W_s = nn.Embedding(vocab, hidden_dim)
+        self.W_s = nn.Embedding(vocab, hidden_dim)  # vocab =~ 20, 
 
         # Encoder layers
         self.encoder_layers = nn.ModuleList(
@@ -1571,7 +1579,7 @@ class ProteinMPNN(nn.Module):
             h_V_enc, h_E = layer(h_V_enc, h_E, E_idx, mask, mask_attend)
 
         # Concatenate sequence embeddings for autoregressive decoder
-        h_S = self.W_s(S)
+        h_S = self.W_s(S)  #
         h_ES = cat_neighbors_nodes(h_S, h_E, E_idx)
 
         # Build encoder embeddings
@@ -1585,7 +1593,7 @@ class ProteinMPNN(nn.Module):
         log_conditional_probs = torch.zeros([X.shape[0], chain_M.shape[1], 21], device=device).float()
 
         for idx in idx_to_loop:
-            h_V = torch.clone(h_V_enc)
+            h_V = torch.clone(h_V_enc)  # all encoded nodes
             order_mask = torch.zeros(chain_M.shape[1], device=device).float()
             if backbone_only:
                 order_mask = torch.ones(chain_M.shape[1], device=device).float()
@@ -1618,6 +1626,8 @@ class ProteinMPNN(nn.Module):
 
             logits = self.W_out(h_V)
             log_probs = F.log_softmax(logits, dim=-1)
+
+            # write out the log prob of the idx's node to the "stored" tensor of probs to return later.
             log_conditional_probs[:, idx, :] = log_probs[:, idx, :]
         return log_conditional_probs
 
