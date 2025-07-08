@@ -456,9 +456,9 @@ def tied_featurize(
         tied_pos_list_of_lists = []
         tied_beta = np.ones(L_max)
         if tied_positions_dict != None:
-            tied_pos_list = tied_positions_dict[b["name"]]
+            tied_pos_list = tied_positions_dict
             # tied_pos_list:
-            # {"protein1_name": 
+            # {"protein1_name":
             #   [
             #     {"A": [1], "B": [1], "C": [1]},  # <-- item is such a dict!
             #     {"D": [2], "E": [2], "F": [2]},
@@ -1189,7 +1189,7 @@ class ProteinMPNN(nn.Module):
             self.features = ProteinFeatures(node_features, edge_features, top_k=k_neighbors, augment_eps=augment_eps)
 
         self.W_e = nn.Linear(edge_features, hidden_dim, bias=True)
-        self.W_s = nn.Embedding(vocab, hidden_dim)  # vocab =~ 20, 
+        self.W_s = nn.Embedding(vocab, hidden_dim)  # vocab =~ 20,
 
         # Encoder layers
         self.encoder_layers = nn.ModuleList(

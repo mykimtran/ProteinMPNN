@@ -170,7 +170,7 @@ def main(args):
                 bias_AAs_np[n] = bias_AA_dict[AA]
 
     if args.pdb_path:
-        pdb_dict_list = parse_PDB(args.pdb_path, ca_only=args.ca_only)
+        pdb_dict_list = parse_PDB(args.pdb_path, ca_only=args.ca_only) ## use this.
         dataset_valid = StructureDatasetPDB(pdb_dict_list, truncate=None, max_length=args.max_length)
         all_chain_list = [item[-1:] for item in list(pdb_dict_list[0]) if item[:9] == "seq_chain"]  # ['A','B', 'C',...]
         if args.pdb_path_chains:
@@ -561,7 +561,7 @@ def main(args):
                                             args.model_name,
                                             commit_str,
                                             seed,
-                                            native_seq,
+                                            native_seq,  # this is my solution.
                                         )
                                     )  # write the native sequence
                                 start = 0
