@@ -292,11 +292,29 @@ def main(args):
                     loop_c = len(fasta_seqs)
                 for fc in range(1 + loop_c):
                     if fc == 0:
-                        structure_sequence_score_file = base_folder + "/score_only/" + batch_clones[0]["name"] + f"_pdb"
+                        if args.out_name:
+                            additional_name = args.out_name
+                            structure_sequence_score_file = (
+                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_pdb_{additional_name}"
+                            )
+                        else:
+                            structure_sequence_score_file = (
+                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_pdb"
+                            )
                     else:
-                        structure_sequence_score_file = (
-                            base_folder + "/score_only/" + batch_clones[0]["name"] + f"_fasta_{fc}"
-                        )
+                        if args.out_name:
+                            additional_name = args.out_name
+                            structure_sequence_score_file = (
+                                base_folder
+                                + "/score_only/"
+                                + batch_clones[0]["name"]
+                                + f"_fasta_{fc}_{additional_name}"
+                            )
+                        else:
+                            structure_sequence_score_file = (
+                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_fasta_{fc}"
+                            )
+
                     native_score_list = []
                     global_native_score_list = []
                     if fc > 0:
@@ -354,7 +372,12 @@ def main(args):
             elif args.conditional_probs_only:
                 if print_all:
                     print(f"Calculating conditional probabilities for {name_}")
-                conditional_probs_only_file = base_folder + "/conditional_probs_only/" + batch_clones[0]["name"]
+                if args.out_name:
+                    conditional_probs_only_file = (
+                        base_folder + "/conditional_probs_only/" + batch_clones[0]["name"] + f"_{additional_name}"
+                    )
+                else:
+                    conditional_probs_only_file = base_folder + "/conditional_probs_only/" + batch_clones[0]["name"]
                 log_conditional_probs_list = []
                 for j in range(NUM_BATCHES):
                     randn_1 = torch.randn(chain_M.shape, device=X.device)
@@ -381,7 +404,12 @@ def main(args):
             elif args.unconditional_probs_only:
                 if print_all:
                     print(f"Calculating sequence unconditional probabilities for {name_}")
-                unconditional_probs_only_file = base_folder + "/unconditional_probs_only/" + batch_clones[0]["name"]
+                if args.out_name:
+                    unconditional_probs_only_file = (
+                        base_folder + "/unconditional_probs_only/" + batch_clones[0]["name"] + f"_{additional_name}"
+                    )
+                else:
+                    unconditional_probs_only_file = base_folder + "/unconditional_probs_only/" + batch_clones[0]["name"]
                 log_unconditional_probs_list = []
                 for j in range(NUM_BATCHES):
                     log_unconditional_probs = model.unconditional_probs(X, mask, residue_idx, chain_encoding_all)
@@ -404,9 +432,17 @@ def main(args):
                 global_scores = _scores(S, log_probs, mask)  # score the whole structure-sequence
                 global_native_score = global_scores.cpu().data.numpy()
                 # Generate some sequences
-                ali_file = base_folder + "/seqs/" + batch_clones[0]["name"] + ".fa"
-                score_file = base_folder + "/scores/" + batch_clones[0]["name"] + ".npz"
-                probs_file = base_folder + "/probs/" + batch_clones[0]["name"] + ".npz"
+
+                if args.out_name:
+                    additional_name = args.out_name
+                    ali_file = base_folder + "/seqs/" + batch_clones[0]["name"] + f"_{additional_name}.fa"
+                    score_file = base_folder + "/scores/" + batch_clones[0]["name"] + f"_{additional_name}.npz"
+                    probs_file = base_folder + "/probs/" + batch_clones[0]["name"] + f"_{additional_name}.npz"
+                else:
+                    ali_file = base_folder + "/seqs/" + batch_clones[0]["name"] + ".fa"
+                    score_file = base_folder + "/scores/" + batch_clones[0]["name"] + ".npz"
+                    probs_file = base_folder + "/probs/" + batch_clones[0]["name"] + ".npz"
+
                 if print_all:
                     print(f"Generating sequences for: {name_}")
                 t0 = time.time()
@@ -615,7 +651,7 @@ def main(args):
                 total_length = X.shape[1]
                 if print_all:
                     print(f"{num_seqs} sequences of length {total_length} generated in {dt} seconds")
-                #if args.run_my_analysis:
+                # if args.run_my_analysis:
                 #    ... here you can call functions that you write somewhere else.
 
 
@@ -759,6 +795,8 @@ if __name__ == "__main__":
     argparser.add_argument(
         "--tied_positions_jsonl", type=str, default="", help="Path to a dictionary with tied positions"
     )
+
+    argparser.add_argument("--out_name", type=str, default="", help="Save outputs under a custom name")
 
     args = argparser.parse_args()
     main(args)
