@@ -374,10 +374,12 @@ def main(args):
                     print(f"Calculating conditional probabilities for {name_}")
                 if args.out_name:
                     conditional_probs_only_file = (
-                        base_folder + "/conditional_probs_only/" + batch_clones[0]["name"] + f"_{additional_name}"
+                        base_folder + "/conditional_probs_only/" + batch_clones[0]["name"] + f"_{name_}"
                     )
                 else:
-                    conditional_probs_only_file = base_folder + "/conditional_probs_only/" + batch_clones[0]["name"]
+                    conditional_probs_only_file = (
+                        base_folder + "/conditional_probs_only/" + batch_clones[0][{args.out_name}]
+                    )
                 log_conditional_probs_list = []
                 for j in range(NUM_BATCHES):
                     randn_1 = torch.randn(chain_M.shape, device=X.device)
