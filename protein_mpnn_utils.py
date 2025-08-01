@@ -458,7 +458,7 @@ def tied_featurize(
         if tied_positions_dict != None:
             tied_pos_list = tied_positions_dict[b["name"]]
             # tied_pos_list:
-            # {"protein1_name": 
+            # {"protein1_name":
             #   [
             #     {"A": [1], "B": [1], "C": [1]},  # <-- item is such a dict!
             #     {"D": [2], "E": [2], "F": [2]},
@@ -1189,7 +1189,7 @@ class ProteinMPNN(nn.Module):
             self.features = ProteinFeatures(node_features, edge_features, top_k=k_neighbors, augment_eps=augment_eps)
 
         self.W_e = nn.Linear(edge_features, hidden_dim, bias=True)
-        self.W_s = nn.Embedding(vocab, hidden_dim)  # vocab =~ 20, 
+        self.W_s = nn.Embedding(vocab, hidden_dim)  # vocab =~ 20,
 
         # Encoder layers
         self.encoder_layers = nn.ModuleList(
@@ -1489,7 +1489,7 @@ class ProteinMPNN(nn.Module):
         mask_fw = mask_1D * (1.0 - mask_attend)
 
         N_batch, N_nodes = X.size(0), X.size(1)
-        log_probs = torch.zeros((N_batch, N_nodes, 21), device=device)
+        all_log_probs = torch.zeros((N_batch, N_nodes, 21), device=device)
         all_probs = torch.zeros((N_batch, N_nodes, 21), device=device, dtype=torch.float32)
         h_S = torch.zeros_like(h_V, device=device)
         S = torch.zeros((N_batch, N_nodes), dtype=torch.int64, device=device)
@@ -1562,6 +1562,34 @@ class ProteinMPNN(nn.Module):
                     S[:, t] = S_t_repeat
                     all_probs[:, t, :] = probs.float()
         output_dict = {"S": S, "probs": all_probs, "decoding_order": decoding_order}
+        # Print specific positions - all amino acid log probabilities (0-20)
+        # print("Sampled amino acid log probabilities at specific positions:")
+
+        # # Save to CSV file
+        # import csv
+
+        # CSV_OUTPUT = "/Users/mktran/code/two_state-ai/data/scratch/sampled_log_probs_from_tied_pos.csv"
+        # with open(CSV_OUTPUT, "w", newline="") as f:
+        #     writer = csv.writer(f)
+        #     # Write header
+        #     header = ["Position"] + [f"AA_{i}" for i in range(21)]
+        #     writer.writerow(header)
+
+        #     # Write three rows of data
+        #     pos_1_data = ["Position_1"] + all_log_probs[0, 1, :].tolist()
+        #     pos_485_data = ["Position_485"] + all_log_probs[0, 485, :].tolist()
+        #     pos_972_data = ["Position_972"] + all_log_probs[0, 972, :].tolist()
+
+        #     writer.writerow(pos_1_data)
+        #     writer.writerow(pos_485_data)
+        #     writer.writerow(pos_972_data)
+
+        # print(f"Log probabilities saved to {CSV_OUTPUT}")
+        # print(f"log_probs[0, 1, 0:20] = {all_log_probs[0, 1, :]}")
+        # print(f"log_probs[0, 485, 0:20] = {all_log_probs[0, 485, :]}")
+        # print(f"log_probs[0, 972, 0:20] = {all_log_probs[0, 972, :]}")
+        # print(all_probs.shape)
+
         return output_dict
 
     def conditional_probs(self, X, S, mask, chain_M, residue_idx, chain_encoding_all, randn, backbone_only=False):
@@ -1619,7 +1647,7 @@ class ProteinMPNN(nn.Module):
 
             h_EXV_encoder_fw = mask_fw * h_EXV_encoder
             for layer in self.decoder_layers:
-                # Masked positions attend to encoder information, unmasked see.
+                # Masked positions attend to encoder information, unmasked see
                 h_ESV = cat_neighbors_nodes(h_V, h_ES, E_idx)
                 h_ESV = mask_bw * h_ESV + h_EXV_encoder_fw
                 h_V = layer(h_V, h_ESV, mask)

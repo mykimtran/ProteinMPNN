@@ -291,33 +291,26 @@ def main(args):
                     fasta_names, fasta_seqs = parse_fasta(args.path_to_fasta, omit=["/"])
                     loop_c = len(fasta_seqs)
                 for fc in range(1 + loop_c):
-                    if fc == 0:
+                    if fc == 0:  # PDB sequence
                         if args.out_name:
                             additional_name = args.out_name
-                            structure_sequence_score_file = (
-                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_pdb_{additional_name}"
-                            )
+                            structure_sequence_score_file = base_folder + "/score_only/" + f"{additional_name}_pdb"
                         else:
-                            structure_sequence_score_file = (
-                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_pdb"
-                            )
+                            structure_sequence_score_file = base_folder + "/score_only/" + batch_clones[0]["name"]
                     else:
                         if args.out_name:
                             additional_name = args.out_name
                             structure_sequence_score_file = (
-                                base_folder
-                                + "/score_only/"
-                                + batch_clones[0]["name"]
-                                + f"_fasta_{fc}_{additional_name}"
+                                base_folder + "/score_only/" + f"{additional_name}_fasta_{fc}"
                             )
                         else:
                             structure_sequence_score_file = (
-                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"_fasta_{fc}"
+                                base_folder + "/score_only/" + batch_clones[0]["name"] + f"{fc}_fasta"
                             )
 
                     native_score_list = []
                     global_native_score_list = []
-                    if fc > 0:
+                    if fc > 0:  # assigns the FASTA sequence to S
                         input_seq_length = len(fasta_seqs[fc - 1])
                         S_input = torch.tensor([alphabet_dict[AA] for AA in fasta_seqs[fc - 1]], device=device)[
                             None, :
@@ -373,13 +366,9 @@ def main(args):
                 if print_all:
                     print(f"Calculating conditional probabilities for {name_}")
                 if args.out_name:
-                    conditional_probs_only_file = (
-                        base_folder + "/conditional_probs_only/" + batch_clones[0]["name"] + f"_{name_}"
-                    )
+                    conditional_probs_only_file = base_folder + "/conditional_probs_only/" + f"{args.out_name}"
                 else:
-                    conditional_probs_only_file = (
-                        base_folder + "/conditional_probs_only/" + batch_clones[0][{args.out_name}]
-                    )
+                    conditional_probs_only_file = base_folder + "/conditional_probs_only/" + batch_clones[0]["name"]
                 log_conditional_probs_list = []
                 for j in range(NUM_BATCHES):
                     randn_1 = torch.randn(chain_M.shape, device=X.device)
@@ -407,9 +396,7 @@ def main(args):
                 if print_all:
                     print(f"Calculating sequence unconditional probabilities for {name_}")
                 if args.out_name:
-                    unconditional_probs_only_file = (
-                        base_folder + "/unconditional_probs_only/" + batch_clones[0]["name"] + f"_{additional_name}"
-                    )
+                    unconditional_probs_only_file = base_folder + "/unconditional_probs_only/" + f"{additional_name}"
                 else:
                     unconditional_probs_only_file = base_folder + "/unconditional_probs_only/" + batch_clones[0]["name"]
                 log_unconditional_probs_list = []
@@ -437,9 +424,9 @@ def main(args):
 
                 if args.out_name:
                     additional_name = args.out_name
-                    ali_file = base_folder + "/seqs/" + batch_clones[0]["name"] + f"_{additional_name}.fa"
-                    score_file = base_folder + "/scores/" + batch_clones[0]["name"] + f"_{additional_name}.npz"
-                    probs_file = base_folder + "/probs/" + batch_clones[0]["name"] + f"_{additional_name}.npz"
+                    ali_file = base_folder + "/seqs/" + f"{additional_name}.fa"
+                    score_file = base_folder + "/scores/" + f"{additional_name}.npz"
+                    probs_file = base_folder + "/probs/" + f"{additional_name}.npz"
                 else:
                     ali_file = base_folder + "/seqs/" + batch_clones[0]["name"] + ".fa"
                     score_file = base_folder + "/scores/" + batch_clones[0]["name"] + ".npz"

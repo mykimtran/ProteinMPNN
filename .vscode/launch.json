@@ -4,7 +4,7 @@
   "configurations": [
     {
       "name": "Attach to debugpy (port 5678)",
-      "type": "python",
+      "type": "debugpy",
       "request": "attach",
       "connect": {
         "host": "localhost",           // or remote host / IP
@@ -19,6 +19,30 @@
         }
       ],
       "justMyCode": false             // show library frames too
+    },
+    {
+      "name": "Python: ProteinMPNN Direct",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/protein_mpnn_run.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "--jsonl_path", "/Users/mktran/code/two_state-ai/data/rsv/prefusion/preprocessed/5w23_env_parsed.jsonl",
+        "--path_to_fasta", "/Users/mktran/code/two_state-ai/data/rsv/prefusion/debug/ts_stab/fasta/5w23_env_ts_stab.fa",
+        "--fixed_positions_jsonl", "/Users/mktran/code/two_state-ai/data/rsv/prefusion/debug/ts_stab/fixed_pos/5w23_env_ts_stab.jsonl",
+        "--tied_positions_jsonl", "/Users/mktran/code/two_state-ai/data/rsv/prefusion/debug/tied_positions_5w23.jsonl",
+        "--out_folder", "/Users/mktran/code/two_state-ai/data/rsv/prefusion/debug/delete",
+        "--num_seq_per_target", "1",
+        "--sampling_temp", "0.1",
+        "--save_probs", "1",
+        "--seed", "1",
+        "--batch_size", "1",
+        "--out_name", "delete",
+        "--path_to_model_weights", "/Users/mktran/code/ProteinMPNN/vanilla_model_weights",
+        "--model_name", "v_48_020"
+      ]
     }
   ]
 }
