@@ -1217,6 +1217,7 @@ class ProteinMPNN(nn.Module):
         randn,
         use_input_decoding_order=False,
         decoding_order=None,
+        output_logits=None,
     ):
         """Graph-conditioned sequence model"""
         device = X.device
@@ -1266,6 +1267,22 @@ class ProteinMPNN(nn.Module):
 
         logits = self.W_out(h_V)
         log_probs = F.log_softmax(logits, dim=-1)
+
+        if output_logits:
+            # Get the third-last position in the decoding order
+            third_last_pos = decoding_order[:, -3]
+
+            # Extract logits and log_probs for that position
+            batch_indices = torch.arange(X.shape[0], device=X.device)
+            third_last_logits = logits[batch_indices, third_last_pos]
+            third_last_log_probs = log_probs[batch_indices, third_last_pos]
+            # Save to NPZ file
+            np.savez(
+                output_logits,
+                position_indices=third_last_pos.cpu().numpy(),
+                logits=third_last_logits.detach().cpu().numpy(),
+                log_probs=third_last_log_probs.detach().cpu().numpy(),
+            )
         return log_probs
 
     def sample(

@@ -413,8 +413,22 @@ def main(args):
                     design_mask=mask_out,
                 )
             else:
+                if args.output_logits:
+                    # Use the value from the argument as the output path
+                    output_logits = args.output_logits
+                else:
+                    output_logits = None  # No output if flag not provided
                 randn_1 = torch.randn(chain_M.shape, device=X.device)
-                log_probs = model(X, S, mask, chain_M * chain_M_pos, residue_idx, chain_encoding_all, randn_1)
+                log_probs = model(
+                    X,
+                    S,
+                    mask,
+                    chain_M * chain_M_pos,
+                    residue_idx,
+                    chain_encoding_all,
+                    randn_1,
+                    output_logits=output_logits,
+                )
                 mask_for_loss = mask * chain_M * chain_M_pos
                 scores = _scores(S, log_probs, mask_for_loss)  # score only the redesigned part
                 native_score = scores.cpu().data.numpy()
@@ -786,6 +800,10 @@ if __name__ == "__main__":
     )
 
     argparser.add_argument("--out_name", type=str, default="", help="Save outputs under a custom name")
+
+    argparser.add_argument(
+        "--output_logits", type=str, default="", help="Whether to output logits for the third-last position"
+    )
 
     args = argparser.parse_args()
     main(args)
