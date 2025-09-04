@@ -1271,7 +1271,6 @@ class ProteinMPNN(nn.Module):
         if output_logits:
             # Get the third-last position in the decoding order
             third_last_pos = decoding_order[:, -3]
-
             # Extract logits and log_probs for that position
             batch_indices = torch.arange(X.shape[0], device=X.device)
             third_last_logits = logits[batch_indices, third_last_pos]

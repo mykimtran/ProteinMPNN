@@ -319,8 +319,22 @@ def main(args):
                             S_input  # assumes that S and S_input are alphabetically sorted for masked_chains
                         )
                     for j in range(NUM_BATCHES):
+                        if args.output_logits:
+                            # Use the value from the argument as the output path
+                            output_logits = args.output_logits
+                        else:
+                            output_logits = None  # No output if flag not provided
                         randn_1 = torch.randn(chain_M.shape, device=X.device)
-                        log_probs = model(X, S, mask, chain_M * chain_M_pos, residue_idx, chain_encoding_all, randn_1)
+                        log_probs = model(
+                            X,
+                            S,
+                            mask,
+                            chain_M * chain_M_pos,
+                            residue_idx,
+                            chain_encoding_all,
+                            randn_1,
+                            output_logits=output_logits,
+                        )
                         mask_for_loss = mask * chain_M * chain_M_pos
                         scores = _scores(S, log_probs, mask_for_loss)
                         native_score = scores.cpu().data.numpy()
@@ -413,11 +427,7 @@ def main(args):
                     design_mask=mask_out,
                 )
             else:
-                if args.output_logits:
-                    # Use the value from the argument as the output path
-                    output_logits = args.output_logits
-                else:
-                    output_logits = None  # No output if flag not provided
+
                 randn_1 = torch.randn(chain_M.shape, device=X.device)
                 log_probs = model(
                     X,
@@ -427,7 +437,6 @@ def main(args):
                     residue_idx,
                     chain_encoding_all,
                     randn_1,
-                    output_logits=output_logits,
                 )
                 mask_for_loss = mask * chain_M * chain_M_pos
                 scores = _scores(S, log_probs, mask_for_loss)  # score only the redesigned part
