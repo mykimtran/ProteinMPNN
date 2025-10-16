@@ -1241,52 +1241,112 @@ class ProteinMPNN(nn.Module):
         h_EXV_encoder = cat_neighbors_nodes(h_V, h_EX_encoder, E_idx)
 
         chain_M = chain_M * mask  # update chain_M to include missing regions
-        if not use_input_decoding_order:
-            if output_logits:
-                # decoding order: fixed positions are randomized, designable positions are in the order of the chains
-                scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6  # 1e6 pushes 1s to the end
+
+        if output_logits:
+            # infer once (expects exactly 3 designable positions)
+            tail_base = (chain_M[0] == 1).nonzero(as_tuple=False).flatten()  # (3,)
+            if tail_base.numel() != 3:
+                raise ValueError(f"Expected exactly 3 non-fixed positions, found {tail_base.numel()}")
+
+            # cache encoder state so each run starts clean
+            h_V_enc = h_V.clone()
+
+            # collectors
+            pos_runs, logits_runs, logp_runs, tail_runs = [], [], [], []
+
+            for r in (0, 1, 2):
+                # base: fixed (0) random early; designable (1) pushed late
+                scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
+
+                # rotate them across runs: 0→[p0,p1,p2], 1→[p1,p2,p0], 2→[p2,p0,p1]
+                tail = torch.roll(tail_base, shifts=-r, dims=0)
+
+                # force these 3 to be strictly the largest scores (keep relative order)
+                bumps = torch.arange(tail.numel(), device=chain_M.device, dtype=scores.dtype)  # 0,1,2
+                scores[:, tail] = 2e6 + bumps
+
+                # final decoding order
                 decoding_order = torch.argsort(scores, dim=1)
-            else:
+
+                mask_size = E_idx.shape[1]
+                permutation_matrix_reverse = torch.nn.functional.one_hot(decoding_order, num_classes=mask_size).float()
+                order_mask_backward = torch.einsum(
+                    "ij, biq, bjp->bqp",
+                    (1 - torch.triu(torch.ones(mask_size, mask_size, device=device))),
+                    permutation_matrix_reverse,
+                    permutation_matrix_reverse,
+                )
+                mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
+                mask_1D = mask.view([mask.size(0), mask.size(1), 1, 1])
+                mask_bw = mask_1D * mask_attend
+                mask_fw = mask_1D * (1.0 - mask_attend)
+
+                h_EXV_encoder_fw = mask_fw * h_EXV_encoder
+
+                # *** restart from encoder output for this run ***
+                h_V_run = h_V_enc.clone()
+
+                for layer in self.decoder_layers:
+                    # Masked positions attend to encoder information, unmasked see.
+                    h_ESV = cat_neighbors_nodes(h_V_run, h_ES, E_idx)
+                    h_ESV = mask_bw * h_ESV + h_EXV_encoder_fw
+                    h_V_run = layer(h_V_run, h_ESV, mask)
+
+                logits = self.W_out(h_V_run)
+                log_probs = F.log_softmax(logits, dim=-1)
+
+                # third-last slice
+                third_last_pos = decoding_order[:, -3]  # (B,)
+                b_ix = torch.arange(X.shape[0], device=X.device)
+                third_last_logits = logits[b_ix, third_last_pos]  # (B, A)
+                third_last_log_probs = log_probs[b_ix, third_last_pos]  # (B, A)
+
+                # collect for saving
+                pos_runs.append(third_last_pos.detach().cpu().numpy())  # (B,)
+                logits_runs.append(third_last_logits.detach().cpu().numpy())  # (B, A)
+                logp_runs.append(third_last_log_probs.detach().cpu().numpy())  # (B, A)
+                tail_runs.append(tail.detach().cpu().numpy())  # (3,)
+
+            # write ONE npz containing all three runs
+            np.savez(
+                output_logits,
+                position_indices=np.stack(pos_runs, axis=0),  # (3, B)
+                logits=np.stack(logits_runs, axis=0),  # (3, B, A)
+                log_probs=np.stack(logp_runs, axis=0),  # (3, B, A)
+                tail_orders=np.stack(tail_runs, axis=0),  # (3, 3)
+            )
+            return log_probs
+
+        else:
+            if not use_input_decoding_order:
                 decoding_order = torch.argsort(
                     (chain_M + 0.0001) * (torch.abs(randn))
                 )  # [numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
-        mask_size = E_idx.shape[1]
-        permutation_matrix_reverse = torch.nn.functional.one_hot(decoding_order, num_classes=mask_size).float()
-        order_mask_backward = torch.einsum(
-            "ij, biq, bjp->bqp",
-            (1 - torch.triu(torch.ones(mask_size, mask_size, device=device))),
-            permutation_matrix_reverse,
-            permutation_matrix_reverse,
-        )
-        mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
-        mask_1D = mask.view([mask.size(0), mask.size(1), 1, 1])
-        mask_bw = mask_1D * mask_attend
-        mask_fw = mask_1D * (1.0 - mask_attend)
+            mask_size = E_idx.shape[1]
+            permutation_matrix_reverse = torch.nn.functional.one_hot(decoding_order, num_classes=mask_size).float()
+            order_mask_backward = torch.einsum(
+                "ij, biq, bjp->bqp",
+                (1 - torch.triu(torch.ones(mask_size, mask_size, device=device))),
+                permutation_matrix_reverse,
+                permutation_matrix_reverse,
+            )
+            mask_attend = torch.gather(order_mask_backward, 2, E_idx).unsqueeze(-1)
+            mask_1D = mask.view([mask.size(0), mask.size(1), 1, 1])
+            mask_bw = mask_1D * mask_attend
+            mask_fw = mask_1D * (1.0 - mask_attend)
 
-        h_EXV_encoder_fw = mask_fw * h_EXV_encoder
-        for layer in self.decoder_layers:
-            # Masked positions attend to encoder information, unmasked see.
-            h_ESV = cat_neighbors_nodes(h_V, h_ES, E_idx)
-            h_ESV = mask_bw * h_ESV + h_EXV_encoder_fw
-            h_V = layer(h_V, h_ESV, mask)
+            h_EXV_encoder_fw = mask_fw * h_EXV_encoder
 
-        logits = self.W_out(h_V)
-        log_probs = F.log_softmax(logits, dim=-1)
+            for layer in self.decoder_layers:
+                # Masked positions attend to encoder information, unmasked see.
+                h_ESV = cat_neighbors_nodes(h_V, h_ES, E_idx)
+                h_ESV = mask_bw * h_ESV + h_EXV_encoder_fw
+                h_V = layer(h_V, h_ESV, mask)
 
-        # Get the third-last position in the decoding order
-        third_last_pos = decoding_order[:, -3]
-        # Extract logits and log_probs for that position
-        batch_indices = torch.arange(X.shape[0], device=X.device)
-        third_last_logits = logits[batch_indices, third_last_pos]
-        third_last_log_probs = log_probs[batch_indices, third_last_pos]
-        # Save to NPZ file
-        np.savez(
-            output_logits,
-            position_indices=third_last_pos.cpu().numpy(),
-            logits=third_last_logits.detach().cpu().numpy(),
-            log_probs=third_last_log_probs.detach().cpu().numpy(),
-        )
-        return log_probs
+            logits = self.W_out(h_V)
+            log_probs = F.log_softmax(logits, dim=-1)
+
+            return log_probs
 
     def sample(
         self,
@@ -1582,33 +1642,6 @@ class ProteinMPNN(nn.Module):
                     S[:, t] = S_t_repeat
                     all_probs[:, t, :] = probs.float()
         output_dict = {"S": S, "probs": all_probs, "decoding_order": decoding_order}
-        # Print specific positions - all amino acid log probabilities (0-20)
-        # print("Sampled amino acid log probabilities at specific positions:")
-
-        # # Save to CSV file
-        # import csv
-
-        # CSV_OUTPUT = "/Users/mktran/code/two_state-ai/data/scratch/sampled_log_probs_from_tied_pos.csv"
-        # with open(CSV_OUTPUT, "w", newline="") as f:
-        #     writer = csv.writer(f)
-        #     # Write header
-        #     header = ["Position"] + [f"AA_{i}" for i in range(21)]
-        #     writer.writerow(header)
-
-        #     # Write three rows of data
-        #     pos_1_data = ["Position_1"] + all_log_probs[0, 1, :].tolist()
-        #     pos_485_data = ["Position_485"] + all_log_probs[0, 485, :].tolist()
-        #     pos_972_data = ["Position_972"] + all_log_probs[0, 972, :].tolist()
-
-        #     writer.writerow(pos_1_data)
-        #     writer.writerow(pos_485_data)
-        #     writer.writerow(pos_972_data)
-
-        # print(f"Log probabilities saved to {CSV_OUTPUT}")
-        # print(f"log_probs[0, 1, 0:20] = {all_log_probs[0, 1, :]}")
-        # print(f"log_probs[0, 485, 0:20] = {all_log_probs[0, 485, :]}")
-        # print(f"log_probs[0, 972, 0:20] = {all_log_probs[0, 972, :]}")
-        # print(all_probs.shape)
 
         return output_dict
 
