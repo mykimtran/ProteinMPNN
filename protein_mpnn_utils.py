@@ -1242,9 +1242,14 @@ class ProteinMPNN(nn.Module):
 
         chain_M = chain_M * mask  # update chain_M to include missing regions
         if not use_input_decoding_order:
-            decoding_order = torch.argsort(
-                (chain_M + 0.0001) * (torch.abs(randn))
-            )  # [numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
+            if output_logits:
+                # decoding order: fixed positions are randomized, designable positions are in the order of the chains
+                scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6  # 1e6 pushes 1s to the end
+                decoding_order = torch.argsort(scores, dim=1)
+            else:
+                decoding_order = torch.argsort(
+                    (chain_M + 0.0001) * (torch.abs(randn))
+                )  # [numbers will be smaller for places where chain_M = 0.0 and higher for places where chain_M = 1.0]
         mask_size = E_idx.shape[1]
         permutation_matrix_reverse = torch.nn.functional.one_hot(decoding_order, num_classes=mask_size).float()
         order_mask_backward = torch.einsum(
@@ -1268,20 +1273,19 @@ class ProteinMPNN(nn.Module):
         logits = self.W_out(h_V)
         log_probs = F.log_softmax(logits, dim=-1)
 
-        if output_logits:
-            # Get the third-last position in the decoding order
-            third_last_pos = decoding_order[:, -3]
-            # Extract logits and log_probs for that position
-            batch_indices = torch.arange(X.shape[0], device=X.device)
-            third_last_logits = logits[batch_indices, third_last_pos]
-            third_last_log_probs = log_probs[batch_indices, third_last_pos]
-            # Save to NPZ file
-            np.savez(
-                output_logits,
-                position_indices=third_last_pos.cpu().numpy(),
-                logits=third_last_logits.detach().cpu().numpy(),
-                log_probs=third_last_log_probs.detach().cpu().numpy(),
-            )
+        # Get the third-last position in the decoding order
+        third_last_pos = decoding_order[:, -3]
+        # Extract logits and log_probs for that position
+        batch_indices = torch.arange(X.shape[0], device=X.device)
+        third_last_logits = logits[batch_indices, third_last_pos]
+        third_last_log_probs = log_probs[batch_indices, third_last_pos]
+        # Save to NPZ file
+        np.savez(
+            output_logits,
+            position_indices=third_last_pos.cpu().numpy(),
+            logits=third_last_logits.detach().cpu().numpy(),
+            log_probs=third_last_log_probs.detach().cpu().numpy(),
+        )
         return log_probs
 
     def sample(
