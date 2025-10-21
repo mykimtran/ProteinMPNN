@@ -1283,7 +1283,7 @@ class ProteinMPNN(nn.Module):
 
                 h_EXV_encoder_fw = mask_fw * h_EXV_encoder
 
-                # *** restart from encoder output for this run ***
+                # run decoder with this order and (re)using cached encoder state
                 h_V_run = h_V_enc.clone()
 
                 for layer in self.decoder_layers:
