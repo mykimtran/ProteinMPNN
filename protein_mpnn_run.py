@@ -319,7 +319,7 @@ def main(args):
                         )
                     for j in range(NUM_BATCHES):
                         output_logits = None  # No output if flag not provided
-                        symmetrical_units = None  # No symmetrical units if flag not provided
+                        symmetric_units = None  # No symmetrical units if flag not provided
                         randn_1 = torch.randn(chain_M.shape, device=X.device)
                         log_probs = model(
                             X,
@@ -330,7 +330,7 @@ def main(args):
                             chain_encoding_all,
                             randn_1,
                             output_logits=output_logits,
-                            symmetrical_units=symmetrical_units,
+                            symmetric_units=symmetric_units,
                         )
                         mask_for_loss = mask * chain_M * chain_M_pos
                         scores = _scores(S, log_probs, mask_for_loss)
