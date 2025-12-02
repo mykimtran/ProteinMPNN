@@ -1218,6 +1218,7 @@ class ProteinMPNN(nn.Module):
         use_input_decoding_order=False,
         decoding_order=None,
         output_logits=None,
+        symmetric_units=None,
     ):
         """Graph-conditioned sequence model"""
         device = X.device
@@ -1243,27 +1244,35 @@ class ProteinMPNN(nn.Module):
         chain_M = chain_M * mask  # update chain_M to include missing regions
 
         if output_logits:
-            # infer once (expects exactly 3 designable positions)
-            tail_base = (chain_M[0] == 1).nonzero(as_tuple=False).flatten()  # (3,)
-            if tail_base.numel() != 3:
-                raise ValueError(f"Expected exactly 3 non-fixed positions, found {tail_base.numel()}")
+            # infer once (expects designable positions*symmetric_units)
+            designable_positions = (
+                (chain_M[0] == 1).nonzero(as_tuple=False).flatten()
+            )  # (number of designable positions,)
+            designable_positions_num = designable_positions.numel()
+            mutations_per_chain = designable_positions_num // symmetric_units
 
             # cache encoder state so each run starts clean
             h_V_enc = h_V.clone()
 
+            # Reshape into chunks per chain: [chain0_mutations, chain1_mutations, ...]
+            mutation_chunks = designable_positions.reshape(symmetric_units, mutations_per_chain)
+
             # collectors
             pos_runs, logits_runs, logp_runs, tail_runs = [], [], [], []
 
-            for r in (0, 1, 2):
+            for r in range(symmetric_units):
                 # base: fixed (0) random early; designable (1) pushed late
                 scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
 
                 # rotate them across runs: 0→[p0,p1,p2], 1→[p1,p2,p0], 2→[p2,p0,p1]
-                tail = torch.roll(tail_base, shifts=-r, dims=0)
+                tail = torch.roll(mutation_chunks, shifts=-r, dims=0)
 
-                # force these 3 to be strictly the largest scores (keep relative order)
-                bumps = torch.arange(tail.numel(), device=chain_M.device, dtype=scores.dtype)  # 0,1,2
-                scores[:, tail] = 2e6 + bumps
+                # Flatten back to 1D sequence of mutations
+                rotated_mutations = tail.flatten()
+
+                # Force rotated mutations to be decoded in the specific order with increasing scores (overrides random)
+                bumps = torch.arange(len(rotated_mutations), device=chain_M.device, dtype=scores.dtype)
+                scores[:, rotated_mutations] = 2e6 + bumps
 
                 # final decoding order
                 decoding_order = torch.argsort(scores, dim=1)
@@ -1295,27 +1304,24 @@ class ProteinMPNN(nn.Module):
                 logits = self.W_out(h_V_run)
                 log_probs = F.log_softmax(logits, dim=-1)
 
-                # third-last slice
-                third_last_pos = decoding_order[:, -3]  # (B,)
-                b_ix = torch.arange(X.shape[0], device=X.device)
-                third_last_logits = logits[b_ix, third_last_pos]  # (B, A)
-                third_last_log_probs = log_probs[b_ix, third_last_pos]  # (B, A)
+            # x-last slice - extract the mutations of the first chain before the mutations of the other chains
+            # shape in the end will be (number_of_chains, batch_size, mutations_per_chain, 21 amino acids)
+            end_slice = designable_positions_num - mutations_per_chain
+            target_pos = decoding_order[:, -designable_positions_num:-end_slice]  # (B, mutations_per_chain)
 
-                # collect for saving
-                pos_runs.append(third_last_pos.detach().cpu().numpy())  # (B,)
-                logits_runs.append(third_last_logits.detach().cpu().numpy())  # (B, A)
-                logp_runs.append(third_last_log_probs.detach().cpu().numpy())  # (B, A)
-                tail_runs.append(tail.detach().cpu().numpy())  # (3,)
+            # Extract logits and log_probs for all target positions
+            # Need to use advanced indexing to get all positions per batch
+            b_ix = torch.arange(X.shape[0], device=X.device)[:, None]  # (B, 1)
+            target_logits = logits[b_ix, target_pos]  # (B, mutations_per_chain, 21)
+            target_log_probs = log_probs[b_ix, target_pos]  # (B, mutations_per_chain, 21)
 
-            # write ONE npz containing all three runs
-            np.savez(
-                output_logits,
-                position_indices=np.stack(pos_runs, axis=0),  # (3, B)
-                logits=np.stack(logits_runs, axis=0),  # (3, B, A)
-                log_probs=np.stack(logp_runs, axis=0),  # (3, B, A)
-                tail_orders=np.stack(tail_runs, axis=0),  # (3, 3)
-            )
-            return log_probs
+            # collect for saving
+            pos_runs.append(target_pos.detach().cpu().numpy())  # (B, mutations_per_chain)
+            logits_runs.append(target_logits.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
+            logp_runs.append(target_log_probs.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
+            tail_runs.append(tail.detach().cpu().numpy())  # (symmetric_units, mutations_per_chain)
+
+            return pos_runs, logits_runs, logp_runs, tail_runs
 
         else:
             if not use_input_decoding_order:

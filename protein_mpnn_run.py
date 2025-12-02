@@ -307,7 +307,6 @@ def main(args):
                             structure_sequence_score_file = (
                                 base_folder + "/score_only/" + batch_clones[0]["name"] + f"{fc}_fasta"
                             )
-
                     native_score_list = []
                     global_native_score_list = []
                     if fc > 0:  # assigns the FASTA sequence to S
@@ -319,11 +318,8 @@ def main(args):
                             S_input  # assumes that S and S_input are alphabetically sorted for masked_chains
                         )
                     for j in range(NUM_BATCHES):
-                        if args.output_logits:
-                            # Use the value from the argument as the output path
-                            output_logits = args.output_logits
-                        else:
-                            output_logits = None  # No output if flag not provided
+                        output_logits = None  # No output if flag not provided
+                        symmetrical_units = None  # No symmetrical units if flag not provided
                         randn_1 = torch.randn(chain_M.shape, device=X.device)
                         log_probs = model(
                             X,
@@ -334,6 +330,7 @@ def main(args):
                             chain_encoding_all,
                             randn_1,
                             output_logits=output_logits,
+                            symmetrical_units=symmetrical_units,
                         )
                         mask_for_loss = mask * chain_M * chain_M_pos
                         scores = _scores(S, log_probs, mask_for_loss)
@@ -426,6 +423,60 @@ def main(args):
                     mask=mask[0,].cpu().numpy(),
                     design_mask=mask_out,
                 )
+            elif args.output_logits:
+                loop_c = 0
+                if args.path_to_fasta:
+                    fasta_names, fasta_seqs = parse_fasta(args.path_to_fasta, omit=["/"])
+                    loop_c = len(fasta_seqs)
+                for fc in range(1 + loop_c):
+
+                    if fc > 0:  # assigns the FASTA sequence to S
+                        input_seq_length = len(fasta_seqs[fc - 1])
+                        S_input = torch.tensor([alphabet_dict[AA] for AA in fasta_seqs[fc - 1]], device=device)[
+                            None, :
+                        ].repeat(X.shape[0], 1)
+                        S[:, :input_seq_length] = (
+                            S_input  # assumes that S and S_input are alphabetically sorted for masked_chains
+                        )
+                    for j in range(NUM_BATCHES):
+                        # Use the value from the argument as the output path
+                        output_logits_path = args.output_logits[0]
+
+                        # symmetrical units
+                        symmetric_units = int(args.output_logits[1])
+                        randn_1 = torch.randn(chain_M.shape, device=X.device)
+                        pos_runs, logits_runs, logp_runs, tail_runs = model(
+                            X,
+                            S,
+                            mask,
+                            chain_M * chain_M_pos,
+                            residue_idx,
+                            chain_encoding_all,
+                            randn_1,
+                            output_logits=True,
+                            symmetric_units=symmetric_units,
+                        )
+                    if fc == 0:
+                        np.savez(
+                            f"{output_logits_path}_pdb.npz",
+                            position_indices=np.stack(pos_runs, axis=0),  # (symmetric_units, B)
+                            logits=np.stack(logits_runs, axis=0),  # (symmetric_units, B, A)
+                            log_probs=np.stack(logp_runs, axis=0),  # (symmetric_units, B, A)
+                            tail_orders=np.stack(tail_runs, axis=0),  # (symmetric_units, 3)
+                        )
+                    if fc > 0:
+                        np.savez(
+                            f"{output_logits_path}_fasta_{fc}.npz",
+                            position_indices=np.stack(pos_runs, axis=0),  # (symmetric_units, B)
+                            logits=np.stack(logits_runs, axis=0),  # (symmetric_units, B, A)
+                            log_probs=np.stack(logp_runs, axis=0),  # (symmetric_units, B, A)
+                            tail_orders=np.stack(tail_runs, axis=0),  # (symmetric_units, 3)
+                        )
+                    if print_all:
+                        if fc == 0:
+                            print(f"Score for {name_} from PDB completed")
+                        else:
+                            print(f"Score for {name_}_{fc} from FASTA completed")
             else:
 
                 randn_1 = torch.randn(chain_M.shape, device=X.device)
@@ -663,8 +714,6 @@ def main(args):
                 total_length = X.shape[1]
                 if print_all:
                     print(f"{num_seqs} sequences of length {total_length} generated in {dt} seconds")
-                # if args.run_my_analysis:
-                #    ... here you can call functions that you write somewhere else.
 
 
 if __name__ == "__main__":
@@ -811,7 +860,12 @@ if __name__ == "__main__":
     argparser.add_argument("--out_name", type=str, default="", help="Save outputs under a custom name")
 
     argparser.add_argument(
-        "--output_logits", type=str, default="", help="Whether to output logits for the third-last position"
+        "--output_logits",
+        type=str,
+        nargs=2,
+        default=["", "3"],
+        metavar=("PATH", "SYMMETRIC_UNITS"),
+        help="Output logits to specified path with given number of symmetric units (e.g., --output_logits /path/to/output.npz 3)",
     )
 
     args = argparser.parse_args()
