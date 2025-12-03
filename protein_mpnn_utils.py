@@ -1304,22 +1304,22 @@ class ProteinMPNN(nn.Module):
                 logits = self.W_out(h_V_run)
                 log_probs = F.log_softmax(logits, dim=-1)
 
-            # x-last slice - extract the mutations of the first chain before the mutations of the other chains
-            # shape in the end will be (number_of_chains, batch_size, mutations_per_chain, 21 amino acids)
-            end_slice = designable_positions_num - mutations_per_chain
-            target_pos = decoding_order[:, -designable_positions_num:-end_slice]  # (B, mutations_per_chain)
+                # x-last slice - extract the mutations of the first chain before the mutations of the other chains
+                # shape in the end will be (number_of_chains, batch_size, mutations_per_chain, 21 amino acids)
+                end_slice = designable_positions_num - mutations_per_chain
+                target_pos = decoding_order[:, -designable_positions_num:-end_slice]  # (B, mutations_per_chain)
 
-            # Extract logits and log_probs for all target positions
-            # Need to use advanced indexing to get all positions per batch
-            b_ix = torch.arange(X.shape[0], device=X.device)[:, None]  # (B, 1)
-            target_logits = logits[b_ix, target_pos]  # (B, mutations_per_chain, 21)
-            target_log_probs = log_probs[b_ix, target_pos]  # (B, mutations_per_chain, 21)
+                # Extract logits and log_probs for all target positions
+                # Need to use advanced indexing to get all positions per batch
+                b_ix = torch.arange(X.shape[0], device=X.device)[:, None]  # (B, 1)
+                target_logits = logits[b_ix, target_pos]  # (B, mutations_per_chain, 21)
+                target_log_probs = log_probs[b_ix, target_pos]  # (B, mutations_per_chain, 21)
 
-            # collect for saving
-            pos_runs.append(target_pos.detach().cpu().numpy())  # (B, mutations_per_chain)
-            logits_runs.append(target_logits.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
-            logp_runs.append(target_log_probs.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
-            tail_runs.append(tail.detach().cpu().numpy())  # (symmetric_units, mutations_per_chain)
+                # collect for saving
+                pos_runs.append(target_pos.detach().cpu().numpy())  # (B, mutations_per_chain)
+                logits_runs.append(target_logits.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
+                logp_runs.append(target_log_probs.detach().cpu().numpy())  # (B, mutations_per_chain, 21)
+                tail_runs.append(tail.detach().cpu().numpy())  # (symmetric_units, mutations_per_chain)
 
             return pos_runs, logits_runs, logp_runs, tail_runs
 
