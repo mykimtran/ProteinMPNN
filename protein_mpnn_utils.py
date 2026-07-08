@@ -1254,8 +1254,22 @@ class ProteinMPNN(nn.Module):
             # cache encoder state so each run starts clean
             h_V_enc = h_V.clone()
 
-            # Reshape into chunks per chain: [chain0_mutations, chain1_mutations, ...]
-            mutation_chunks = designable_positions.reshape(symmetric_units, mutations_per_chain)
+            # Group designable positions by SYMMETRIC UNIT (protomer), not by a blind reshape.
+            # A flat reshape only groups correctly for a homo-oligomer (every mutation present in
+            # every symmetric chain). For a hetero-oligomer (e.g. HERV-K: SU chains A/B/C + TM
+            # chains a/b/c) a mutation in SU and one in TM belong to the SAME protomer but sit in
+            # different chains, and the flat reshape mis-pairs them (grouping is by mutation-then-
+            # chain instead of by protomer). Here each designable position is assigned to its
+            # protomer via chain_rank % symmetric_units (chains are block-ordered per subunit,
+            # symmetric_units chains per subunit). This is IDENTICAL to the old reshape for
+            # within-subunit (homo-oligomer) cases and correct for mixed cross-subunit pairs.
+            chain_ids   = chain_encoding_all[0, designable_positions]                # chain label per designable pos
+            uniq_chains = torch.unique(chain_ids, sorted=True)                       # ascending chain labels
+            chain_rank  = torch.searchsorted(uniq_chains, chain_ids)                 # 0..num_chains-1
+            units       = chain_rank % symmetric_units                               # protomer index per designable pos
+            mutation_chunks = torch.stack(
+                [designable_positions[units == u] for u in range(symmetric_units)]   # (symmetric_units, mutations_per_chain)
+            )
 
             # collectors
             pos_runs, logits_runs, logp_runs, tail_runs = [], [], [], []
