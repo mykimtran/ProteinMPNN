@@ -423,7 +423,16 @@ def main(args):
                     mask=mask[0,].cpu().numpy(),
                     design_mask=mask_out,
                 )
-            elif args.output_logits:
+            elif args.output_logits_full_tail or args.output_logits:
+                # --output_logits_full_tail takes precedence and selects the full-tail mode
+                # (every decode rank saved, one shared fixed-position decoding order across
+                # runs). Plain --output_logits keeps its original behaviour: first chunk of
+                # the tail only, decoding order redrawn per run.
+                # NOTE: --output_logits has a truthy default (["", "3"]), so it cannot be
+                # tested for presence; the full-tail flag must therefore be checked first.
+                full_tail = bool(args.output_logits_full_tail)
+                logits_args = args.output_logits_full_tail if full_tail else args.output_logits
+
                 loop_c = 0
                 if args.path_to_fasta:
                     fasta_names, fasta_seqs = parse_fasta(args.path_to_fasta, omit=["/"])
@@ -440,10 +449,10 @@ def main(args):
                         )
                     for j in range(NUM_BATCHES):
                         # Use the value from the argument as the output path
-                        output_logits_path = args.output_logits[0]
+                        output_logits_path = logits_args[0]
 
                         # symmetrical units
-                        symmetric_units = int(args.output_logits[1])
+                        symmetric_units = int(logits_args[1])
                         randn_1 = torch.randn(chain_M.shape, device=X.device)
                         pos_runs, logits_runs, logp_runs, tail_runs = model(
                             X,
@@ -455,6 +464,7 @@ def main(args):
                             randn_1,
                             output_logits=True,
                             symmetric_units=symmetric_units,
+                            full_tail=full_tail,
                         )
                     if fc == 0:
                         np.savez(
@@ -866,6 +876,20 @@ if __name__ == "__main__":
         default=["", "3"],
         metavar=("PATH", "SYMMETRIC_UNITS"),
         help="Output logits to specified path with given number of symmetric units (e.g., --output_logits /path/to/output.npz 3)",
+    )
+
+    argparser.add_argument(
+        "--output_logits_full_tail",
+        type=str,
+        nargs=2,
+        default=None,
+        metavar=("PATH", "SYMMETRIC_UNITS"),
+        help="Same inputs as --output_logits, but saves the whole designable tail instead of "
+        "only its first chunk, so axis 2 of logits/log_probs/position_indices holds every "
+        "decode rank (slot k = rank k+1) rather than just rank 1. Also draws the "
+        "fixed-position decoding order once and shares it across the symmetric-unit runs, so "
+        "runs differ only by the tail rotation. Takes precedence over --output_logits; "
+        "default=None so that its absence is detectable.",
     )
 
     args = argparser.parse_args()

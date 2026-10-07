@@ -1219,6 +1219,7 @@ class ProteinMPNN(nn.Module):
         decoding_order=None,
         output_logits=None,
         symmetric_units=None,
+        full_tail=False,
     ):
         """Graph-conditioned sequence model"""
         device = X.device
@@ -1274,18 +1275,25 @@ class ProteinMPNN(nn.Module):
             # collectors
             pos_runs, logits_runs, logp_runs, tail_runs = [], [], [], []
 
-            # base: fixed (0) random early; designable (1) pushed late.
-            # Drawn ONCE, outside the run loop, so every symmetric-unit run shares the same
-            # decoding order over the fixed positions. Redrawing it per run (as before) gave
-            # each run a different fixed-position order, which perturbed the logits by more
-            # than the differences being compared across runs, so the rotation effect was not
-            # separable from that jitter. Now the only thing that differs between runs is the
-            # tail rotation below.
-            base_scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
+            # full_tail only: draw the decoding-order scores ONCE, outside the run loop, so
+            # every symmetric-unit run shares the same order over the fixed positions. With a
+            # per-run redraw each run orders the fixed positions differently, which perturbs
+            # the logits by more than the rank differences full_tail is meant to expose, so
+            # the rotation effect is not separable from that jitter. Sharing one draw leaves
+            # the tail rotation below as the only difference between runs.
+            # The default path keeps the original per-run redraw inside the loop, so its RNG
+            # stream and its results are unchanged.
+            base_scores = None
+            if full_tail:
+                base_scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
 
             for r in range(symmetric_units):
-                # clone per run: the tail bump below writes into scores in place
-                scores = base_scores.clone()
+                if full_tail:
+                    # clone per run: the tail bump below writes into scores in place
+                    scores = base_scores.clone()
+                else:
+                    # base: fixed (0) random early; designable (1) pushed late
+                    scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
 
                 # rotate them across runs: 0→[p0,p1,p2], 1→[p1,p2,p0], 2→[p2,p0,p1]
                 tail = torch.roll(mutation_chunks, shifts=-r, dims=0)
@@ -1327,10 +1335,17 @@ class ProteinMPNN(nn.Module):
                 logits = self.W_out(h_V_run)
                 log_probs = F.log_softmax(logits, dim=-1)
 
-                # x-last slice - extract the mutations of the first chain before the mutations of the other chains
-                # shape in the end will be (number_of_chains, batch_size, mutations_per_chain, 21 amino acids)
-                end_slice = designable_positions_num - mutations_per_chain
-                target_pos = decoding_order[:, -designable_positions_num:-end_slice]  # (B, mutations_per_chain)
+                if full_tail:
+                    # Whole designable tail, in decoding order: slot k is decode rank k+1.
+                    # Equals tail.flatten() by construction, since the bump above forces
+                    # exactly that order, so each slot is self-labelling against tail_orders.
+                    # shape in the end will be (symmetric_units, batch_size, designable_positions_num, 21)
+                    target_pos = decoding_order[:, -designable_positions_num:]  # (B, designable_positions_num)
+                else:
+                    # x-last slice - extract the mutations of the first chain before the mutations of the other chains
+                    # shape in the end will be (number_of_chains, batch_size, mutations_per_chain, 21 amino acids)
+                    end_slice = designable_positions_num - mutations_per_chain
+                    target_pos = decoding_order[:, -designable_positions_num:-end_slice]  # (B, mutations_per_chain)
 
                 # Extract logits and log_probs for all target positions
                 # Need to use advanced indexing to get all positions per batch
