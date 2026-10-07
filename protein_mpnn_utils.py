@@ -1274,9 +1274,18 @@ class ProteinMPNN(nn.Module):
             # collectors
             pos_runs, logits_runs, logp_runs, tail_runs = [], [], [], []
 
+            # base: fixed (0) random early; designable (1) pushed late.
+            # Drawn ONCE, outside the run loop, so every symmetric-unit run shares the same
+            # decoding order over the fixed positions. Redrawing it per run (as before) gave
+            # each run a different fixed-position order, which perturbed the logits by more
+            # than the differences being compared across runs, so the rotation effect was not
+            # separable from that jitter. Now the only thing that differs between runs is the
+            # tail rotation below.
+            base_scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
+
             for r in range(symmetric_units):
-                # base: fixed (0) random early; designable (1) pushed late
-                scores = (1 - chain_M) * torch.rand_like(chain_M) + chain_M * 1e6
+                # clone per run: the tail bump below writes into scores in place
+                scores = base_scores.clone()
 
                 # rotate them across runs: 0→[p0,p1,p2], 1→[p1,p2,p0], 2→[p2,p0,p1]
                 tail = torch.roll(mutation_chunks, shifts=-r, dims=0)
